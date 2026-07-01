@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   security-sensitive-guard-detect:
-    if: ${{ !github.event.pull_request.draft }}
+    if: ${{ github.repository == 'openclaw/openclaw' && !github.event.pull_request.draft }}
     runs-on: tenki-standard-medium-4c-8g
     timeout-minutes: 5
     steps:
@@ -66,7 +66,7 @@ jobs:
         run: node scripts/github/security-sensitive-guard.mjs
 
   security-sensitive-guard:
-    if: ${{ !github.event.pull_request.draft && always() }}
+    if: ${{ github.repository == 'openclaw/openclaw' && !github.event.pull_request.draft && always() }}
     needs:
       - security-sensitive-guard-detect
     runs-on: tenki-standard-medium-4c-8g
