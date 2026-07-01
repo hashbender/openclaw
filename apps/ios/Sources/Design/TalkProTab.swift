@@ -113,7 +113,7 @@ struct TalkProTab: View {
             OpenClawProMark(size: 31, shadowRadius: 9)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Talk")
-                    .font(.system(size: 27, weight: .bold, design: .rounded))
+                    .font(.system(size: 30, weight: .bold))
                 Text(self.headerSubtitle)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
@@ -169,16 +169,11 @@ struct TalkProTab: View {
                 Button(action: self.handlePrimaryAction) {
                     Label(self.state.primaryButtonTitle, systemImage: self.state.primaryButtonIcon)
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
-                        .background {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(self.state.primaryButtonFill)
-                                .shadow(color: self.state.color.opacity(0.28), radius: 18, y: 8)
-                        }
                 }
-                .buttonStyle(.plain)
+                .buttonBorderShape(.capsule)
+                .openClawGlassButton(prominent: true, tint: self.state.primaryButtonFill)
                 .disabled(self.state.primaryAction == .waiting)
             }
         }
@@ -607,17 +602,14 @@ struct TalkProState: Equatable {
         }
     }
 
-    var primaryButtonFill: AnyShapeStyle {
+    var primaryButtonFill: Color {
         switch self.primaryAction {
         case .stop:
-            AnyShapeStyle(OpenClawBrand.danger)
+            OpenClawBrand.danger
         case .waiting:
-            AnyShapeStyle(OpenClawBrand.warn.opacity(0.72))
+            OpenClawBrand.warn.opacity(0.72)
         default:
-            AnyShapeStyle(LinearGradient(
-                colors: [self.color.opacity(0.95), OpenClawBrand.accent],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing))
+            Color(uiColor: .systemBlue)
         }
     }
 
@@ -662,7 +654,7 @@ private struct TalkProOrb: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0 / 24.0)) { timeline in
             ZStack {
-                ForEach(0..<3, id: \.self) { ring in
+                ForEach(0..<self.ringCount, id: \.self) { ring in
                     Circle()
                         .strokeBorder(self.color.opacity(self.ringOpacity(ring)), lineWidth: 1.4)
                         .scaleEffect(self.ringScale(ring, date: timeline.date))
@@ -676,14 +668,23 @@ private struct TalkProOrb: View {
                     }
                 TalkProWaveform(mode: self.mode, tint: self.color, barCount: 18)
                     .frame(width: 116, height: 52)
-                    .opacity(self.systemImage == "waveform" || self.systemImage == "mic.fill" ? 1 : 0.34)
+                    .opacity(self.showsWaveform ? 1 : 0)
                 Image(systemName: self.systemImage)
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(self.color)
-                    .opacity(self.systemImage == "waveform" || self.systemImage == "mic.fill" ? 0.20 : 1)
+                    .opacity(self.showsWaveform ? 0.20 : 1)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
         }
+    }
+
+    private var ringCount: Int {
+        self.mode == .still ? 0 : 3
+    }
+
+    private var showsWaveform: Bool {
+        self.systemImage == "waveform" || self.systemImage == "mic.fill"
     }
 
     private func ringScale(_ ring: Int, date: Date) -> CGFloat {

@@ -118,7 +118,7 @@ struct RootTabsSourceGuardTests {
         #expect(source.contains(".listRowSeparator(.hidden, edges: .all)"))
         #expect(source.contains(".listSectionSeparator(.hidden, edges: .all)"))
         #expect(source.contains("if self.isSidebarDrawerLayout {"))
-        #expect(source.contains("private var sidebarFooter: some View"))
+        #expect(!source.contains("private var sidebarFooter: some View"))
         #expect(!source.contains("LabeledContent(\"Version\""))
         #expect(navigationSource.contains("SidebarGroup(title: \"CHAT\", destinations: [.chat, .talk])"))
         #expect(!navigationSource.contains("title: \"AGENT\""))
@@ -175,6 +175,7 @@ struct RootTabsSourceGuardTests {
 
         #expect(!source.contains("ToolbarItem"))
         #expect(source.contains("self.directHeaderLeadingAction(for: route) == nil ? .visible : .hidden"))
+        #expect(destinationsSource.contains(".toolbar(.hidden, for: .navigationBar)"))
         #expect(destinationsSource.contains("self.directHeaderLeadingAction(for: .instances)"))
         #expect(destinationsSource.contains("self.directHeaderLeadingAction(for: .dreaming)"))
         #expect(destinationsSource.contains("self.directHeader(\n                        for: .usage"))
@@ -182,6 +183,26 @@ struct RootTabsSourceGuardTests {
         #expect(destinationsSource.contains("self.directRoute == route ? self.headerLeadingAction : nil"))
         #expect(nodesSource.contains("OpenClawSidebarHeaderLeadingSlot(action: headerLeadingAction)"))
         #expect(dreamingSource.contains("OpenClawSidebarHeaderLeadingSlot(action: headerLeadingAction)"))
+    }
+
+    @Test func `iOS 26 chrome uses native glass while content cards stay quiet`() throws {
+        let rootSource = try String(contentsOf: Self.rootTabsSourceURL(), encoding: .utf8)
+        let componentsSource = try String(contentsOf: Self.proComponentsSourceURL(), encoding: .utf8)
+        let cardSurface = try Self.extract(
+            componentsSource,
+            from: "private struct ProPanelSurfaceModifier: ViewModifier",
+            to: "struct ProIconBadge: View")
+
+        #expect(rootSource.contains(".openClawTabBarBehavior()"))
+        #expect(componentsSource.contains("content.tabBarMinimizeBehavior(.onScrollDown)"))
+        #expect(componentsSource.contains(".buttonStyle(.glassProminent)"))
+        #expect(componentsSource.contains(".buttonStyle(.glass)"))
+        #expect(componentsSource.contains("GlassEffectContainer(spacing: 8)"))
+        #expect(componentsSource.contains("if #available(iOS 26.0, *)"))
+        #expect(componentsSource.contains(".buttonStyle(.borderedProminent)"))
+        #expect(componentsSource.contains(".buttonStyle(.bordered)"))
+        #expect(componentsSource.contains("struct OpenClawNoticeBanner: View"))
+        #expect(!cardSurface.contains("glassEffect"))
     }
 
     @Test func `routed headers use shared adaptive layout`() throws {
@@ -645,6 +666,7 @@ struct RootTabsSourceGuardTests {
         #expect(actionsSource.contains("Run /pair approve in your OpenClaw chat"))
         #expect(actionsSource.contains("self.resetOnboarding()"))
         #expect(actionsSource.contains("self.gatewayController.trustRotatedGatewayCertificate(from: problem)"))
+        #expect(actionsSource.contains("GatewayProblemPrimaryAction.openProtocolMismatchHelpIfNeeded(problem)"))
         #expect(actionsSource.contains("await self.retryGatewayConnectionFromProblem()"))
 
         #expect(settingsSource.contains("GatewayProblemDetailsSheet("))
