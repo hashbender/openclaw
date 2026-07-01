@@ -3,6 +3,7 @@
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-core";
 import { createAssistantMessageEventStream } from "openclaw/plugin-sdk/llm";
 import { describe, expect, it, vi } from "vitest";
+import { ProviderHttpError } from "../provider-http-errors.js";
 import { castAgentMessage, castAgentMessages } from "../test-helpers/agent-message-fixtures.js";
 import {
   OMITTED_ASSISTANT_REASONING_TEXT,
@@ -1008,6 +1009,207 @@ describe("wrapAnthropicStreamWithRecovery", () => {
 
     await expect(response.result()).resolves.toEqual(finalMessage);
     expect(events).toHaveLength(2);
+  });
+
+  it("recovers when ProviderHttpError.errorBody contains a thinking signature error", async () => {
+    // ProviderHttpError stores the actionable Anthropic rejection detail on
+    // errorBody while .message carries a generic human-facing string.
+    // Recovery must traverse errorBody to detect the thinking-block failure.
+    const providerError = new ProviderHttpError(
+      "LLM request failed: provider rejected the request schema or tool payload.",
+      {
+        status: 400,
+        body: '{"error":{"message":"Invalid `signature` in `thinking` block"}}',
+      },
+    );
+    let callCount = 0;
+    const wrapped = wrapAnthropicStreamWithRecovery(
+      (() => {
+        callCount += 1;
+        return Promise.reject(providerError);
+      }) as Parameters<typeof wrapAnthropicStreamWithRecovery>[0],
+      { id: "test-session" },
+    );
+
+    await expect(
+      wrapped(
+        {} as never,
+        {
+          messages: castAgentMessages([
+            {
+              role: "assistant",
+              content: [{ type: "thinking", thinking: "secret", thinkingSignature: "sig" }],
+            },
+          ]),
+        } as never,
+        {} as never,
+      ),
+    ).rejects.toBe(providerError);
+    expect(callCount).toBe(2);
+  });
+
+  it("recovers when a thinking signature error is nested inside errorBody in a cause chain", async () => {
+    // Some error wrappers nest the ProviderHttpError inside .cause.
+    // Recovery must traverse the cause chain and still find errorBody.
+    const providerError = new ProviderHttpError(
+      "LLM request failed: provider rejected the request schema or tool payload.",
+      {
+        status: 400,
+        body: '{"error":{"message":"Invalid `signature` in `thinking` block"}}',
+      },
+    );
+    const outerError = new Error("failover: all providers exhausted");
+    Object.defineProperty(outerError, "cause", {
+      value: providerError,
+      enumerable: true,
+      configurable: true,
+    });
+    let callCount = 0;
+    const wrapped = wrapAnthropicStreamWithRecovery(
+      (() => {
+        callCount += 1;
+        return Promise.reject(outerError);
+      }) as Parameters<typeof wrapAnthropicStreamWithRecovery>[0],
+      { id: "test-session" },
+    );
+
+    await expect(
+      wrapped(
+        {} as never,
+        {
+          messages: castAgentMessages([
+            {
+              role: "assistant",
+              content: [{ type: "thinking", thinking: "secret", thinkingSignature: "sig" }],
+            },
+          ]),
+        } as never,
+        {} as never,
+      ),
+    ).rejects.toBe(outerError);
+    expect(callCount).toBe(2);
+  });
+
+  it("does not recover when ProviderHttpError.errorBody is a non-thinking error", async () => {
+    // errorBody traversal must not false-positive on unrelated provider errors
+    // (rate limits, auth failures, context overflow, etc.).
+    const rateLimitError = new ProviderHttpError("Anthropic (429): rate limit exceeded", {
+      status: 429,
+      body: '{"error":{"message":"Rate limit exceeded. Please try again later."}}',
+    });
+    let callCount = 0;
+    const wrapped = wrapAnthropicStreamWithRecovery(
+      (() => {
+        callCount += 1;
+        return Promise.reject(rateLimitError);
+      }) as Parameters<typeof wrapAnthropicStreamWithRecovery>[0],
+      { id: "test-session" },
+    );
+
+    await expect(wrapped({} as never, { messages: [] } as never, {} as never)).rejects.toBe(
+      rateLimitError,
+    );
+    expect(callCount).toBe(1);
+  });
+
+  it("does not recover when ProviderHttpError has a generic schema rejection without thinking detail", async () => {
+    // Generic schema rejections (missing required fields, type mismatches, etc.)
+    // must not trigger thinking-block recovery.
+    const genericError = new ProviderHttpError(
+      "LLM request failed: provider rejected the request schema or tool payload.",
+      {
+        status: 400,
+        body: '{"error":{"message":"`messages.5.content.1`: unknown field `tool_call`"}}',
+      },
+    );
+    let callCount = 0;
+    const wrapped = wrapAnthropicStreamWithRecovery(
+      (() => {
+        callCount += 1;
+        return Promise.reject(genericError);
+      }) as Parameters<typeof wrapAnthropicStreamWithRecovery>[0],
+      { id: "test-session" },
+    );
+
+    await expect(wrapped({} as never, { messages: [] } as never, {} as never)).rejects.toBe(
+      genericError,
+    );
+    expect(callCount).toBe(1);
+  });
+
+  it("fires the onRecoveredAnthropicThinking hook when errorBody-based recovery succeeds", async () => {
+    // The recovery notification hook must fire after a successful retry so
+    // callers (session manager, telemetry) can observe the self-heal event.
+    const providerError = new ProviderHttpError(
+      "LLM request failed: provider rejected the request schema or tool payload.",
+      {
+        status: 400,
+        body: '{"error":{"message":"Invalid `signature` in `thinking` block"}}',
+      },
+    );
+    const hookCalls: Array<{
+      originalCount: number;
+      cleanedCount: number;
+    }> = [];
+    let callCount = 0;
+    const wrapped = wrapAnthropicStreamWithRecovery(
+      (() => {
+        callCount += 1;
+        if (callCount === 1) {
+          return Promise.reject(providerError);
+        }
+        const stream = createAssistantMessageEventStream();
+        const finalMessage = createTestAssistantMessage({
+          content: [{ type: "text", text: "recovered response" }],
+          stopReason: "stop",
+        }) as AssistantMessage;
+        queueMicrotask(() => {
+          stream.push({ type: "start", partial: finalMessage });
+          stream.push({ type: "done", reason: "stop", message: finalMessage });
+          stream.end();
+        });
+        return stream;
+      }) as Parameters<typeof wrapAnthropicStreamWithRecovery>[0],
+      {
+        id: "test-session",
+        onRecoveredAnthropicThinking: (recovery) => {
+          hookCalls.push({
+            originalCount: recovery.originalMessages.length,
+            cleanedCount: recovery.cleanedMessages.length,
+          });
+        },
+      },
+    );
+
+    // The wrapper returns a Promise (first call rejected) that resolves to
+    // the retry stream.  Drain events and await result() so the recovery
+    // notification hook fires, then verify the hook payload.
+    const response = (await wrapped(
+      {} as never,
+      {
+        messages: castAgentMessages([
+          {
+            role: "assistant",
+            content: [{ type: "thinking", thinking: "secret", thinkingSignature: "sig" }],
+          },
+        ]),
+      } as never,
+      {} as never,
+    )) as { result: () => Promise<unknown> } & AsyncIterable<unknown>;
+
+    const events: unknown[] = [];
+    for await (const event of response) {
+      events.push(event);
+    }
+    const result = await response.result();
+
+    expect(callCount).toBe(2);
+    expect(result).toBeDefined();
+    expect(hookCalls).toHaveLength(1);
+    expect(hookCalls[0].originalCount).toBe(1);
+    // Retry strips thinking blocks: 1 original assistant → 1 cleaned message.
+    expect(hookCalls[0].cleanedCount).toBe(1);
+    expect(events.some((e) => (e as { type?: string }).type === "done")).toBe(true);
   });
 });
 

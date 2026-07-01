@@ -546,13 +546,46 @@ function shouldRecoverAnthropicThinkingError(
     current.rawError,
     current.errorMessage,
     current.message,
+    // ProviderHttpError stores the raw response body on errorBody, not on any
+    // field traversed above.  Also cover common aliases so recovery works
+    // regardless of which error wrapper carried the rejection.
+    current.errorBody,
+    current.body,
+    current.detail,
+    current.responseBody,
+    current.data,
   ]);
   for (const candidate of candidates) {
-    if (
-      typeof candidate === "string" &&
-      shouldRecoverAnthropicThinkingErrorMessage(candidate, sessionMeta)
-    ) {
-      return true;
+    if (typeof candidate === "string") {
+      if (shouldRecoverAnthropicThinkingErrorMessage(candidate, sessionMeta)) {
+        return true;
+      }
+      continue;
+    }
+    // Some providers store the rejection detail as a parsed object (e.g. a
+    // JSON-decoded error payload on errorBody).  Serialize only these
+    // provider-detail objects under a bounded char cap before testing against
+    // the thinking-block error pattern.  Skip arrays and opaque carrier
+    // objects (AgentMessage, etc.) whose content fields may coincidentally
+    // match the pattern without carrying an actionable provider rejection.
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      const record = candidate as Record<string, unknown>;
+      // Provider-detail objects are small and error-shaped; carrier objects
+      // like AgentMessage carry a role / content / stopReason signature.
+      if (record.role !== undefined || record.content !== undefined) {
+        continue;
+      }
+      try {
+        const serialized = JSON.stringify(candidate);
+        if (
+          serialized.length <= 20_000 &&
+          shouldRecoverAnthropicThinkingErrorMessage(serialized, sessionMeta)
+        ) {
+          return true;
+        }
+      } catch {
+        // Circular or non-serializable object; skip.
+      }
     }
   }
   return false;

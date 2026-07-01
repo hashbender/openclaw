@@ -28,7 +28,7 @@ jobs:
     permissions:
       contents: read
     name: "check-arm"
-    runs-on: blacksmith-16vcpu-ubuntu-2404-arm
+    runs-on: tenki-standard-medium-4c-8g
     timeout-minutes: 120
     steps:
       - name: Begin Testbox
