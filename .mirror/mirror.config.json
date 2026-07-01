@@ -37,9 +37,7 @@
       "dependency-guard-detect",
       "dependency-guard-autoscrub",
       "dependency-guard",
-      "label",
-      "security-sensitive-guard-detect",
-      "security-sensitive-guard"
+      "label"
     ],
     "accept_skipped": true
   }
