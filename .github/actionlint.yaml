@@ -18,6 +18,9 @@ self-hosted-runner:
     - blacksmith-12vcpu-macos-15
     - blacksmith-6vcpu-macos-26
     - blacksmith-12vcpu-macos-26
+    # Tenki fork mirror runners
+    - tenki-standard-medium-4c-8g
+    - tenki-standard-large-plus-16c-32g
 
 # Ignore patterns for known issues
 paths:

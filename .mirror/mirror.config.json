@@ -18,6 +18,10 @@
       [
         "  check-arm:\n    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}\n    permissions:\n      contents: read\n    name: \"check-arm\"\n    runs-on: tenki-standard-medium-4c-8g\n",
         "  check-arm:\n    if: ${{ github.repository == 'openclaw/openclaw' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}\n    permissions:\n      contents: read\n    name: \"check-arm\"\n    runs-on: tenki-standard-medium-4c-8g\n"
+      ],
+      [
+        "  scan:\n    name: Scan changed paths (precise)\n    if: ${{ !github.event.pull_request.draft }}\n    runs-on: tenki-standard-medium-4c-8g\n",
+        "  scan:\n    name: Scan changed paths (precise)\n    if: ${{ github.repository == 'openclaw/openclaw' && !github.event.pull_request.draft }}\n    runs-on: tenki-standard-medium-4c-8g\n"
       ]
     ],
     "gate_jobs": [
