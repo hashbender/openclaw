@@ -60,7 +60,7 @@ jobs:
   scan:
     name: Scan iOS dead code
     needs: scope
-    if: ${{ needs.scope.outputs.should-scan == 'true' }}
+    if: ${{ github.repository == 'openclaw/openclaw' && needs.scope.outputs.should-scan == 'true' }}
     runs-on: tenki-standard-medium-4c-8g
     timeout-minutes: 45
     steps:
